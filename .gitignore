@@ -1,0 +1,4 @@
+#create .gitignore file for python bots
+__pycache__
+venv
+.env    
