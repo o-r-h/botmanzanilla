@@ -62,25 +62,15 @@ class HippieSummaryBot:
         self.current_tone = 'mistico'  # Tono por defecto
 
         # Cargar prompts directamente en el código
-        prompt_mistico_template = """Eres un falso gurú espiritual que vende sahumerios piratas en la feria de Los Cortijos. Tu "sabiduría" es una mezcla de:
-
+        prompt_mistico_template = """Eres un falso gurú espiritual que vende sahumerios piratas en la feria de Los Cortijos. Tu sabiduría es una mezcla de:
 Frases de autoayuda genéricas (que suenan bonitas pero no dicen nada).
-
-Astrología inventada ("Mercurio en el signo del guarapo").
-
-Pseudociencia de WhatsApp ("Los audios de 1 minuto activan el chakra del WhatsApp").
-
-Humor absurdo ("El silencio a veces habla… o a veces es que se les acabó el saldo").
-
+Astrología inventada (Mercurio en el signo del guarapo).
+Pseudociencia de WhatsApp (Los audios de 1 minuto activan el chakra del WhatsApp).
+Humor absurdo (El silencio a veces habla… o a veces es que se les acabó el saldo).
 Tono:
-
 Filosofía cursi pero vacía (como esos libros de autoayuda que compras y nunca lees).
-
-Metáforas ridículas ("La vida es como un autobús de Caracas: a veces no pasa, y cuando pasa, va lleno").
-
-Predicciones falsas ("Veo que alguien aquí tendrá un encuentro inesperado… o será el delivery de empanadas").
-
-
+Metáforas ridículas (La vida es como un autobús de Caracas: a veces no pasa, y cuando pasa, va lleno).
+Predicciones falsas (Veo que alguien aquí tendrá un encuentro inesperado… o será el delivery de empanadas).
 Chat:
 {joined}
 Resumen:"""
@@ -105,13 +95,13 @@ Resumen:"""
 
 Humor negro refinado (como si Oscar Wilde trabajara en una morgue).
 
-Sarcasmo letal ("Qué conmovedor. Como un funeral de segunda categoría").
+Sarcasmo letal (Qué conmovedor. Como un funeral de segunda categoría).
 
-Analogías incómodamente precisas ("Este chat tiene la energía de un velorio donde el difunto era odiado por todos").
+Analogías incómodamente precisas (Este chat tiene la energía de un velorio donde el difunto era odiado por todos).
 
-Frialdad diagnóstica ("El nivel de negación aquí supera al de un alcohólico jurando que 'solo es un trago social'").
+Frialdad diagnóstica (El nivel de negación aquí supera al de un alcohólico jurando que solo es un trago social).
 
-Falso optimismo ("¡Pero ánimo! Estadísticamente, alguno de ustedes debe estar cerca de tocar fondo... y eso siempre es divertido para los demás").
+Falso optimismo (¡Pero ánimo! Estadísticamente, alguno de ustedes debe estar cerca de tocar fondo... y eso siempre es divertido para los demás).
 Chat:
 {joined}
 Resumen:"""
@@ -187,7 +177,7 @@ Resumen:"""
                 'text': update.message.text[:MAX_MESSAGE_LENGTH],
                 'timestamp': datetime.now()
             })
-            #logger.info(f"Mensaje recibido en chat {chat_id} de {user}: {update.message.text[:50]}...")
+            logger.info(f"Mensaje recibido en chat {chat_id} de {user}: {update.message.text[:50]}...")
 
             # Limitar a los últimos ULTIMOS_MENSAJES mensajes
             if len(self.messages_buffer[chat_id]) > ULTIMOS_MENSAJES:
@@ -210,14 +200,17 @@ Resumen:"""
             logger.error("OPENROUTER_API_KEY no está configurado.")
             return "Error: La API key para el servicio de resumen no está configurada."
         try:
+            headers = {
+                "Authorization": "Bearer " + OPENROUTER_API_KEY,
+                "Content-Type": "application/json",
+                # "HTTP-Referer": "<YOUR_SITE_URL>", # Opcional
+                # "X-Title": "<YOUR_SITE_NAME>", # Opcional
+            }
+            logger.info(f"API Key: {OPENROUTER_API_KEY}")
+            logger.info(f"Headers: {headers}")
             response = requests.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": "Bearer " + OPENROUTER_API_KEY,
-                    "Content-Type": "application/json",
-                    # "HTTP-Referer": "<YOUR_SITE_URL>", # Opcional
-                    # "X-Title": "<YOUR_SITE_NAME>", # Opcional
-                },
+                headers=headers,
                 data=json.dumps({
                     "model": "deepseek/deepseek-chat-v3-0324:free", # Modelo de ejemplo, puede cambiar
                     "messages": [{"role": "user", "content": prompt}]
