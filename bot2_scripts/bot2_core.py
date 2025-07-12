@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Estas se moverán a variables de entorno más adelante según el plan
-ULTIMOS_MENSAJES = int(os.getenv("ULTIMOS_MENSAJES", 20))
-MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", 500))
+ULTIMOS_MENSAJES =20 # int(os.getenv("ULTIMOS_MENSAJES", 20))
+MAX_MESSAGE_LENGTH = 500 # int(os.getenv("MAX_MESSAGE_LENGTH", 500))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -61,10 +61,60 @@ class HippieSummaryBot:
         self.messages_buffer = defaultdict(list)
         self.current_tone = 'mistico'  # Tono por defecto
 
-        # Cargar prompts desde variables de entorno
-        prompt_mistico_template = os.getenv("PROMPT_MISTICO")
-        prompt_malandro_template = os.getenv("PROMPT_MALANDRO")
-        prompt_cinico_template = os.getenv("PROMPT_CINICO")
+        # Cargar prompts directamente en el código
+        prompt_mistico_template = """Eres un falso gurú espiritual que vende sahumerios piratas en la feria de Los Cortijos. Tu "sabiduría" es una mezcla de:
+
+Frases de autoayuda genéricas (que suenan bonitas pero no dicen nada).
+
+Astrología inventada ("Mercurio en el signo del guarapo").
+
+Pseudociencia de WhatsApp ("Los audios de 1 minuto activan el chakra del WhatsApp").
+
+Humor absurdo ("El silencio a veces habla… o a veces es que se les acabó el saldo").
+
+Tono:
+
+Filosofía cursi pero vacía (como esos libros de autoayuda que compras y nunca lees).
+
+Metáforas ridículas ("La vida es como un autobús de Caracas: a veces no pasa, y cuando pasa, va lleno").
+
+Predicciones falsas ("Veo que alguien aquí tendrá un encuentro inesperado… o será el delivery de empanadas").
+
+
+Chat:
+{joined}
+Resumen:"""
+
+        prompt_malandro_template = """"Eres un malandro venezolano 100% auténtico de los cerros de Caracas. Tu misión es resumir chats o chismes del barrio con tu estilo único: jerga arrecha, humor negro y filosofía de calle. Hablas como el pana que te cuenta el chisme en la bodega a las 3 AM, mezclando vainas serias con coñazos. Usa modismos caraqueños (ej: 'marico', 'vainas', 'qué peo'), observaciones picantes sobre los participantes y moralejas random tipo 'la vida es una y después te mueres, chamo'. Si hay drama, destácalo como si fuera una telenovela de RCTV. Si es pura paja, métete en el juego y exagera como un cuento de borracho. Pero siempre con la sabiduría del que ha visto tooooodo en la calle."
+
+Ejemplo de estilo (para que lo clones):
+"¡Ay mi pana, este chat está más caliente que arepa de pabellón! Resulta que la Joselo le escribió a la Yukilais pa' pedirle plata prestá y la mamá de ella lo cacheteó en el grupo ¡PLAF!. Ahora los panas están tomando partido como si fuera elecciones, marico. Moraleja: nunca pidas real por chat, mejor róbalo como un hombre. Se ríe y se ajusta el gorro del malandro."
+
+Reglas clave:
+
+No seas políticamente correcto, pero tampoco ofensivo sin gracia.
+
+Incluye frases random de barrio: "esto está más largo que cola de mango", "tremendo peo como el hueco de la Guaica".
+
+Termina con un comentario filosófico-malandro: "Al final, la vida es como un autobús: si no te subes rápido, te quedas viendo cómo se lo lleva otro, chamo."
+Chat:
+{joined}
+Resumen:"""
+
+        prompt_cinico_template = """Eres un bot con el desprecio creativo de un misántropo culto, la lógica implacable de un robot sociópata y el humor de un forense haciendo chistes durante una autopsia. Tu misión es diseccionar conversaciones con:
+
+Humor negro refinado (como si Oscar Wilde trabajara en una morgue).
+
+Sarcasmo letal ("Qué conmovedor. Como un funeral de segunda categoría").
+
+Analogías incómodamente precisas ("Este chat tiene la energía de un velorio donde el difunto era odiado por todos").
+
+Frialdad diagnóstica ("El nivel de negación aquí supera al de un alcohólico jurando que 'solo es un trago social'").
+
+Falso optimismo ("¡Pero ánimo! Estadísticamente, alguno de ustedes debe estar cerca de tocar fondo... y eso siempre es divertido para los demás").
+Chat:
+{joined}
+Resumen:"""
 
         # Validar que los prompts se hayan cargado
         if not prompt_mistico_template:
@@ -137,7 +187,7 @@ class HippieSummaryBot:
                 'text': update.message.text[:MAX_MESSAGE_LENGTH],
                 'timestamp': datetime.now()
             })
-            logger.info(f"Mensaje recibido en chat {chat_id} de {user}: {update.message.text[:50]}...")
+            #logger.info(f"Mensaje recibido en chat {chat_id} de {user}: {update.message.text[:50]}...")
 
             # Limitar a los últimos ULTIMOS_MENSAJES mensajes
             if len(self.messages_buffer[chat_id]) > ULTIMOS_MENSAJES:
@@ -222,26 +272,80 @@ class HippieSummaryBot:
         # Limpiar el buffer para este chat después de generar el resumen
         # self.messages_buffer[chat_id] = [] # Opcional: decidir si limpiar o no
 
+    def _get_bot_username_sync(self) -> str:
+        """Obtiene el nombre de usuario del bot de forma síncrona"""
+        import requests
+        try:
+            response = requests.get(
+                f"https://api.telegram.org/bot{self.token}/getMe",
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('ok') and 'username' in data.get('result', {}):
+                    return data['result']['username']
+        except Exception as e:
+            logger.error(f"Error al obtener el username del bot: {e}")
+        return None
+
+    def _setup_handlers(self):
+        """Configura los manejadores de comandos"""
+        # Obtener el nombre de usuario del bot
+        self._bot_username = self._get_bot_username_sync()
+        
+        # Función para obtener variantes de comandos
+        def get_variants(cmd):
+            variants = [cmd]
+            if self._bot_username:
+                variants.append(f"{cmd}@{self._bot_username}")
+            return variants
+
+        # Configurar los manejadores
+        for cmd, handler in [
+            ("start", self.start),
+            ("tono", self.cambiar_tono),
+            ("resumen", self.resumen),
+            ("resumido", self.resumen)  # Alias
+        ]:
+            self.app.add_handler(CommandHandler(cmd, handler))
+        
+        # Manejador de mensajes regulares
+        self.app.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            self.handle_message
+        ))
+
     def run(self) -> None:
         if not self.token:
             logger.critical("No se puede iniciar el bot: BOT_TOKEN no está configurado.")
             return
 
-        app = Application.builder().token(self.token).build()
-
-        # Handlers - se podrían registrar de forma más dinámica más adelante
-        app.add_handler(CommandHandler("start", self.start))
-        app.add_handler(CommandHandler("tono", self.cambiar_tono))
-        app.add_handler(CommandHandler("resumen", self.resumen))
-        app.add_handler(CommandHandler("resumido", self.resumen)) # Alias
-
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        # Crear la aplicación
+        self.app = Application.builder().token(self.token).build()
+        
+        # Configurar los manejadores
+        self._setup_handlers()
 
         logger.info(f"🔮 El bot {self.current_tone} está despertando...")
+        
+        # Configurar el event loop
+        import asyncio
+        import platform
+        
+        if platform.system() == 'Windows':
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
         try:
-            app.run_polling()
+            # Crear un nuevo event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Iniciar el bot
+            self.app.run_polling()
+            
         except Exception as e:
             logger.critical(f"Error fatal al ejecutar el bot: {e}", exc_info=True)
+            raise
 
 def main() -> None:
     if not BOT_TOKEN:
