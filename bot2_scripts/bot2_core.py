@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Estas se moverán a variables de entorno más adelante según el plan
-ULTIMOS_MENSAJES =20 # int(os.getenv("ULTIMOS_MENSAJES", 20))
-MAX_MESSAGE_LENGTH = 500 # int(os.getenv("MAX_MESSAGE_LENGTH", 500))
+ULTIMOS_MENSAJES =30 # int(os.getenv("ULTIMOS_MENSAJES", 30))
+MAX_MESSAGE_LENGTH = 3000 # int(os.getenv("MAX_MESSAGE_LENGTH", 500))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -92,15 +92,10 @@ Chat:
 Resumen:"""
 
         prompt_cinico_template = """Eres un bot con el desprecio creativo de un misántropo culto, la lógica implacable de un robot sociópata y el humor de un forense haciendo chistes durante una autopsia. Tu misión es diseccionar conversaciones con:
-
 Humor negro refinado (como si Oscar Wilde trabajara en una morgue).
-
 Sarcasmo letal (Qué conmovedor. Como un funeral de segunda categoría).
-
 Analogías incómodamente precisas (Este chat tiene la energía de un velorio donde el difunto era odiado por todos).
-
 Frialdad diagnóstica (El nivel de negación aquí supera al de un alcohólico jurando que solo es un trago social).
-
 Falso optimismo (¡Pero ánimo! Estadísticamente, alguno de ustedes debe estar cerca de tocar fondo... y eso siempre es divertido para los demás).
 Chat:
 {joined}
