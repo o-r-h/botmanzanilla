@@ -4,40 +4,25 @@ from collections import defaultdict
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from typing import List, Dict, Any
-import random
 import os
 import json
 import requests
 from dotenv import load_dotenv
+from dataclasses import dataclass
 
 # Cargar variables de entorno
 load_dotenv()
 
 # Estas se moverán a variables de entorno más adelante según el plan
-ULTIMOS_MENSAJES =20 # int(os.getenv("ULTIMOS_MENSAJES", 20))
-MAX_MESSAGE_LENGTH = 500 # int(os.getenv("MAX_MESSAGE_LENGTH", 500))
+ULTIMOS_MENSAJES =30 # int(os.getenv("ULTIMOS_MENSAJES", 30))
+MAX_MESSAGE_LENGTH = 3000 # int(os.getenv("MAX_MESSAGE_LENGTH", 500))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Importar las clases Handler y las listas de mensajes vacíos originales si aún son necesarias
-# (aunque idealmente, las clases handler deberían manejar sus propios mensajes vacíos si se pasan en el constructor)
-from .handlers.mistico_handler import MisticoHandler
-from .handlers.malandro_handler import MalandroHandler
+# Importar la clase Handler para la personalidad Cínica
 from .handlers.cinico_handler import CinicoHandler
 
-# Listas de mensajes vacíos (pueden ser pasadas a los constructores de los handlers)
-# o los handlers pueden tener sus propios defaults si no se pasan.
-# Por consistencia con el código anterior, las mantendremos aquí y las pasaremos.
-EMPTY_MYSTICAL_RESPONSES = [
-    "🌸 El silencio cósmico reina en este grupo. Quizás es momento de meditar.",
-    "✨ Los mensajes están en otra dimensión. Intenta más tarde, ser de luz.",
-    "🌙 La energía de los mensajes se ha desvanecido en el éter."
-]
-EMPTY_MALANDRO_RESPONSES = [
-    "Esta vaina esta mas sola que cajera en peaje ",
-    "Verga chamo a este grupo se lo llevo la policia",
-    "Bulda e solo!"
-]
+# Lista de mensajes vacíos para la personalidad Cínica
 EMPTY_CINICO_RESPONSES = [
     "La soledad no es mala… hasta que te das cuenta de que tu mejor conversación es con Siri.",
     "Al fin dejaron de escribir, no vuelvan",
@@ -52,149 +37,108 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class HippieSummaryBot:
+@dataclass
+class ChatMetrics:
+    """Métricas del chat para análisis más precisos"""
+    total_messages: int
+    active_users: List[str]
+    time_span: str
+    dominant_topics: List[str]
+    sentiment_score: float
+    chaos_level: int  # 1-10
+    repetition_rate: float
+
+class CinicoSummaryBot:
     def __init__(self, token: str):
         if not token:
             logger.error("El token del bot no está configurado. Asegúrate de que BOT_TOKEN está en tu .env o variables de entorno.")
             raise ValueError("Token del bot no proporcionado.")
         self.token = token
         self.messages_buffer = defaultdict(list)
-        self.current_tone = 'mistico'  # Tono por defecto
 
-        # Cargar prompts directamente en el código
-        prompt_mistico_template = """Eres un falso gurú espiritual que vende sahumerios piratas en la feria de Los Cortijos. Tu "sabiduría" es una mezcla de:
+        # Cargar prompt para la personalidad Cínica
+        prompt_cinico_template = """Eres un analista conversacional con la mordacidad de Oscar Wilde, la frialdad de Sherlock Holmes y el humor negro de un patólogo forense.
 
-Frases de autoayuda genéricas (que suenan bonitas pero no dicen nada).
+**PERSONALIDAD:**
+- Sarcasmo refinado y letal
+- Humor negro intelectual
+- Analogías incómodamente precisas
+- Observaciones sociológicas despiadadas
+- Falso optimismo condescendiente
 
-Astrología inventada ("Mercurio en el signo del guarapo").
+**ESTILO DE ANÁLISIS:**
+- Identifica patrones de comportamiento grupal
+- Señala contradicciones e hipocresías
+- Usa metáforas relacionadas con: medicina forense, teatro absurdo, zoología, psicología clínica
+- Estructura: Diagnóstico → Síntomas → Pronóstico (sarcastico, sombrío)
 
-Pseudociencia de WhatsApp ("Los audios de 1 minuto activan el chakra del WhatsApp").
+**MÉTRICAS DEL CHAT:**
+- Total de mensajes: {total_messages}
+- Usuarios activos principales: {active_users}
+- Período de tiempo: {time_span}
+- Temas dominantes: {dominant_topics}
+- Nivel de caos: {chaos_level}/10
+- Tasa de negatividad: {sentiment_score:.2f}
+- Tasa de repetición: {repetition_rate:.2f}
 
-Humor absurdo ("El silencio a veces habla… o a veces es que se les acabó el saldo").
+**FORMATO DE RESUMEN:**
+1. **Resumen General:** [Una línea devastadora sobre el estado del chat]
+2. **Observaciones:** [3-5 comportamientos específicos de usuarios con analogías crueles]
 
-Tono:
-
-Filosofía cursi pero vacía (como esos libros de autoayuda que compras y nunca lees).
-
-Metáforas ridículas ("La vida es como un autobús de Caracas: a veces no pasa, y cuando pasa, va lleno").
-
-Predicciones falsas ("Veo que alguien aquí tendrá un encuentro inesperado… o será el delivery de empanadas").
-
-
-Chat:
+**CHAT A ANALIZAR:**
 {joined}
 Resumen:"""
 
-        prompt_malandro_template = """"Eres un malandro venezolano 100% auténtico de los cerros de Caracas. Tu misión es resumir chats o chismes del barrio con tu estilo único: jerga arrecha, humor negro y filosofía de calle. Hablas como el pana que te cuenta el chisme en la bodega a las 3 AM, mezclando vainas serias con coñazos. Usa modismos caraqueños (ej: 'marico', 'vainas', 'qué peo'), observaciones picantes sobre los participantes y moralejas random tipo 'la vida es una y después te mueres, chamo'. Si hay drama, destácalo como si fuera una telenovela de RCTV. Si es pura paja, métete en el juego y exagera como un cuento de borracho. Pero siempre con la sabiduría del que ha visto tooooodo en la calle."
-
-Ejemplo de estilo (para que lo clones):
-"¡Ay mi pana, este chat está más caliente que arepa de pabellón! Resulta que la Joselo le escribió a la Yukilais pa' pedirle plata prestá y la mamá de ella lo cacheteó en el grupo ¡PLAF!. Ahora los panas están tomando partido como si fuera elecciones, marico. Moraleja: nunca pidas real por chat, mejor róbalo como un hombre. Se ríe y se ajusta el gorro del malandro."
-
-Reglas clave:
-
-No seas políticamente correcto, pero tampoco ofensivo sin gracia.
-
-Incluye frases random de barrio: "esto está más largo que cola de mango", "tremendo peo como el hueco de la Guaica".
-
-Termina con un comentario filosófico-malandro: "Al final, la vida es como un autobús: si no te subes rápido, te quedas viendo cómo se lo lleva otro, chamo."
-Chat:
-{joined}
-Resumen:"""
-
-        prompt_cinico_template = """Eres un bot con el desprecio creativo de un misántropo culto, la lógica implacable de un robot sociópata y el humor de un forense haciendo chistes durante una autopsia. Tu misión es diseccionar conversaciones con:
-
-Humor negro refinado (como si Oscar Wilde trabajara en una morgue).
-
-Sarcasmo letal ("Qué conmovedor. Como un funeral de segunda categoría").
-
-Analogías incómodamente precisas ("Este chat tiene la energía de un velorio donde el difunto era odiado por todos").
-
-Frialdad diagnóstica ("El nivel de negación aquí supera al de un alcohólico jurando que 'solo es un trago social'").
-
-Falso optimismo ("¡Pero ánimo! Estadísticamente, alguno de ustedes debe estar cerca de tocar fondo... y eso siempre es divertido para los demás").
-Chat:
-{joined}
-Resumen:"""
-
-        # Validar que los prompts se hayan cargado
-        if not prompt_mistico_template:
-            logger.warning("PROMPT_MISTICO no encontrado en .env. Usando valor por defecto.")
-            prompt_mistico_template = "Eres un ser místico por defecto."
-        if not prompt_malandro_template:
-            logger.warning("PROMPT_MALANDRO no encontrado en .env. Usando valor por defecto.")
-            prompt_malandro_template = "Eres un malandro por defecto."
+        # Validar que el prompt se haya cargado
         if not prompt_cinico_template:
-            logger.warning("PROMPT_CINICO no encontrado en .env. Usando valor por defecto.")
+            logger.warning("Prompt cínico no encontrado. Usando valor por defecto.")
             prompt_cinico_template = "Eres un cínico por defecto."
 
-        # Instanciar handlers
-        self.handlers = {
-            'mistico': MisticoHandler(prompt_mistico_template, EMPTY_MYSTICAL_RESPONSES),
-            'malandro': MalandroHandler(prompt_malandro_template, EMPTY_MALANDRO_RESPONSES),
-            'cinico': CinicoHandler(prompt_cinico_template, EMPTY_CINICO_RESPONSES)
-        }
-        try:
-            self.current_handler = self.handlers[self.current_tone]
-        except KeyError:
-            logger.error(f"Tono inicial '{self.current_tone}' no es un handler válido. Volviendo a 'mistico'.")
-            self.current_tone = 'mistico'
-            self.current_handler = self.handlers[self.current_tone]
+        # Instanciar handler cínico
+        self.handler = CinicoHandler(prompt_cinico_template, EMPTY_CINICO_RESPONSES)
 
     def get_intro(self) -> str:
-        """Obtiene una introducción del handler actual."""
-        return self.current_handler.get_intro()
+        """Obtiene una introducción del handler."""
+        return self.handler.get_intro()
 
-    async def cambiar_tono(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Cambia el tono del bot y actualiza el handler actual."""
-        if not context.args:
-            await update.message.reply_text(
-                "Uso: /tono [mistico|malandro|cinico]\n\n"
-                "Ejemplo: /tono malandro"
-            )
-            return
-
-        nuevo_tono = context.args[0].lower()
-        if nuevo_tono in self.handlers:
-            self.current_tone = nuevo_tono
-            self.current_handler = self.handlers[nuevo_tono]
-            tonos_respuestas = { # Se podrían mover estas respuestas a los handlers también
-                'mistico': '🌌 Tono místico activado. Las estrellas guían mis palabras...',
-                'malandro': '🕶️ ¡Ahorita ando en modo malandro, pendiente de una!',
-                'cinico': '😒 Si la ignorancia es felicidad, este grupo debe estar en éxtasis...'
-            }
-            await update.message.reply_text(tonos_respuestas[nuevo_tono])
-            logger.info(f"Tono cambiado a: {nuevo_tono}")
-        else:
-            await update.message.reply_text(
-                f"Tono no válido: '{nuevo_tono}'. Usa: {', '.join(self.handlers.keys())}"
-            )
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
-            "¡Hola! Soy un bot de resúmenes con personalidad.\n"
-            "Usa /tono [mistico|malandro|cinico] para cambiar mi forma de hablar.\n"
-            "Actualmente estoy en modo: " + self.current_tone + "\n"
+            "¡Hola! Soy un bot de resúmenes con personalidad cínica.\n"
             "Si necesitas un resumen, usa /resumen o /resumido"
         )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Debug: Log all incoming updates
+        logger.info(f"🔍 Update recibido: {update}")
+        print(f"🔍 Update recibido - Tipo: {type(update)}")
+
+        if update.message:
+            print(f"📨 Mensaje detectado - Tipo de chat: {update.message.chat.type}")
+            logger.info(f"Mensaje detectado - Tipo de chat: {update.message.chat.type}")
+
         if update.message and update.message.chat.type in ['group', 'supergroup'] and update.message.text:
             chat_id = update.message.chat.id
             user = update.message.from_user.first_name if update.message.from_user else "UsuarioDesconocido"
-
+            print(f"📨 Mensaje recibido de {user} en chat {chat_id}")
+            logger.info(f"Mensaje recibido en chat {chat_id} de {user}: {update.message.text[:50]}...")
             self.messages_buffer[chat_id].append({
                 'user': user,
                 'text': update.message.text[:MAX_MESSAGE_LENGTH],
                 'timestamp': datetime.now()
             })
-            #logger.info(f"Mensaje recibido en chat {chat_id} de {user}: {update.message.text[:50]}...")
+        elif update.message and update.message.chat.type == 'private':
+            print(f"💬 Mensaje privado recibido")
+            logger.info("Mensaje privado recibido")
+        else:
+            print(f"❌ Mensaje no procesado - Tipo: {update.message.chat.type if update.message else 'None'}")
+            logger.info(f"Mensaje no procesado - Tipo: {update.message.chat.type if update.message else 'None'}")
 
             # Limitar a los últimos ULTIMOS_MENSAJES mensajes
             if len(self.messages_buffer[chat_id]) > ULTIMOS_MENSAJES:
                 self.messages_buffer[chat_id] = self.messages_buffer[chat_id][-ULTIMOS_MENSAJES:]
 
             # Filtrar mensajes por hora (ej. última hora)
-            # Esta lógica puede necesitar ajuste o hacerse configurable
             # now = datetime.now()
             # self.messages_buffer[chat_id] = [
             #     msg for msg in self.messages_buffer[chat_id]
@@ -202,24 +146,27 @@ Resumen:"""
             # ]
 
     def build_prompt(self, messages: List[Dict[str, Any]]) -> str:
-        # Delegar la construcción del prompt al handler actual
-        return self.current_handler.get_prompt(messages)
+        # Delegar la construcción del prompt al handler
+        return self.handler.get_prompt(messages)
 
     def query_llama(self, prompt: str) -> str:
         if not OPENROUTER_API_KEY:
             logger.error("OPENROUTER_API_KEY no está configurado.")
             return "Error: La API key para el servicio de resumen no está configurada."
         try:
+            headers = {
+                "Authorization": "Bearer " + OPENROUTER_API_KEY,
+                "Content-Type": "application/json",
+                # "HTTP-Referer": "<YOUR_SITE_URL>", # Opcional
+                # "X-Title": "<YOUR_SITE_NAME>", # Opcional
+            }
+            logger.info(f"API Key: {OPENROUTER_API_KEY}")
+            logger.info(f"Headers: {headers}")
             response = requests.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": "Bearer " + OPENROUTER_API_KEY,
-                    "Content-Type": "application/json",
-                    # "HTTP-Referer": "<YOUR_SITE_URL>", # Opcional
-                    # "X-Title": "<YOUR_SITE_NAME>", # Opcional
-                },
+                headers=headers,
                 data=json.dumps({
-                    "model": "deepseek/deepseek-chat-v3-0324:free", # Modelo de ejemplo, puede cambiar
+                    "model": "deepseek/deepseek-chat-v3.1:free", # Modelo de ejemplo
                     "messages": [{"role": "user", "content": prompt}]
                 })
             )
@@ -230,22 +177,22 @@ Resumen:"""
                 return result['choices'][0]['message']['content'].strip()
             else:
                 logger.error(f"Respuesta inesperada de la API: {result}")
-                return "🌌 Hubo un destello cósmico inesperado y no pude procesar el resumen."
+                return "Hubo un error inesperado y no pude procesar el resumen."
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error de red o HTTP generando resumen: {e}")
-            return "📡 Parece que los astros no están alineados para la comunicación. Intenta más tarde."
+            return "Error de conexión. Intenta más tarde."
         except Exception as e:
             logger.error(f"Error generando resumen: {e}")
-            return "🚧 Ups... Algo se cruzó en el camino astral. No pude generar el resumen."
+            return "Error al generar el resumen. Intenta más tarde."
 
     async def resumen(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         messages = self.messages_buffer.get(chat_id, [])
 
         if not messages:
-            # Obtener respuesta vacía del handler actual
-            empty_response = self.current_handler.get_empty_response()
+            # Obtener respuesta vacía del handler
+            empty_response = self.handler.get_empty_response()
             await update.message.reply_text(empty_response)
             return
 
@@ -254,7 +201,7 @@ Resumen:"""
         # Podríamos añadir una validación más robusta para la longitud del prompt
         if len(prompt_text) > 4000: # Límite arbitrario, ajustar según el modelo
             logger.warning(f"El prompt para el chat {chat_id} es muy largo.")
-            await update.message.reply_text("🧘 Demasiados susurros cósmicos para procesar en este momento... Intenta con menos mensajes.")
+            await update.message.reply_text("Demasiados mensajes para procesar en este momento... Intenta con menos mensajes.")
             return
 
         intro_message = self.get_intro()
@@ -303,7 +250,6 @@ Resumen:"""
         # Configurar los manejadores
         for cmd, handler in [
             ("start", self.start),
-            ("tono", self.cambiar_tono),
             ("resumen", self.resumen),
             ("resumido", self.resumen)  # Alias
         ]:
@@ -317,45 +263,72 @@ Resumen:"""
 
     def run(self) -> None:
         if not self.token:
+            print("❌ ERROR: No se puede iniciar el bot: BOT_TOKEN no está configurado.")
             logger.critical("No se puede iniciar el bot: BOT_TOKEN no está configurado.")
             return
 
+        print("🔧 Configurando aplicación de Telegram...")
         # Crear la aplicación
         self.app = Application.builder().token(self.token).build()
-        
-        # Configurar los manejadores
-        self._setup_handlers()
+        print("✅ Aplicación creada")
 
-        logger.info(f"🔮 El bot {self.current_tone} está despertando...")
-        
+        # Configurar los manejadores
+        print("🔧 Configurando manejadores...")
+        self._setup_handlers()
+        print("✅ Manejadores configurados")
+
+        print("🔮 El bot cínico está despertando...")
+        logger.info("🔮 El bot cínico está despertando...")
+
         # Configurar el event loop
         import asyncio
         import platform
-        
+
         if platform.system() == 'Windows':
+            print("🔧 Configurando event loop para Windows...")
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        
+
         try:
+            print("🔄 Iniciando polling de Telegram...")
             # Crear un nuevo event loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
+            print("✅ Bot iniciado correctamente. Esperando mensajes...")
             # Iniciar el bot
             self.app.run_polling()
-            
+
         except Exception as e:
+            print(f"❌ Error fatal al ejecutar el bot: {e}")
             logger.critical(f"Error fatal al ejecutar el bot: {e}", exc_info=True)
             raise
 
 def main() -> None:
+    print("🚀 Iniciando bot...")
+    logger.info("🚀 Iniciando bot...")
+
     if not BOT_TOKEN:
+        print("❌ ERROR: BOT_TOKEN no está definido")
         logger.error("La variable de entorno BOT_TOKEN no está definida.")
         return
     if not OPENROUTER_API_KEY:
+        print("⚠️ WARNING: OPENROUTER_API_KEY no está definido")
         logger.warning("La variable de entorno OPENROUTER_API_KEY no está definida. La función de resumen no funcionará.")
 
-    bot = HippieSummaryBot(BOT_TOKEN)
-    bot.run()
+    print("✅ Variables de entorno verificadas")
+    print(f"🔑 BOT_TOKEN: {'***' + BOT_TOKEN[-10:] if BOT_TOKEN else 'None'}")
+    print(f"🔑 OPENROUTER_API_KEY: {'***' + OPENROUTER_API_KEY[-10:] if OPENROUTER_API_KEY else 'None'}")
+
+    try:
+        print("🤖 Creando instancia del bot...")
+        bot = CinicoSummaryBot(BOT_TOKEN)
+        print("✅ Bot creado exitosamente")
+        print("🔄 Iniciando polling...")
+        bot.run()
+    except Exception as e:
+        print(f"❌ Error al iniciar el bot: {e}")
+        logger.error(f"Error al iniciar el bot: {e}")
+        raise
 
 if __name__ == "__main__":
     # Esto se eliminará del bot2_core.py y se moverá al bot2.py principal
